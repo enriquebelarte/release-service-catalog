@@ -1,0 +1,19 @@
+# sign-and-push-oot-kmods pipeline 
+
+Tekton pipeline to sign and push out-of-tree kernel modules with internal signing server.
+
+## Parameters
+
+| Name                            | Description                                                                                                                        | Optional | Default value                                             |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------------------------------------|
+| release                         | The namespaced name (namespace/name) of the Release custom resource initiating this pipeline execution                             | No       | -                                                         |
+| releasePlan                     | The namespaced name (namespace/name) of the releasePlan                                                                            | No       | -                                                         |
+| releasePlanAdmission            | The namespaced name (namespace/name) of the releasePlanAdmission                                                                   | No       | -                                                         |
+| releaseServiceConfig            | The namespaced name (namespace/name) of the releaseServiceConfig                                                                   | No       | -                                                         |
+| snapshot                        | The namespaced name (namespace/name) of the snapshot                                                                               | No       | -                                                         |
+| taskGitRevision                 | The revision in the taskGitUrl repo to be used                                                                                     | No       | -                                                         |
+| kmodsPath                       | The path where out-of-tree kernel modules are built in the image                                                                   | No       | -                                                         |
+| signedKmodsPath                 | The path where the signed kernel modules will be in the private repository                                                         | No       | -                                                         |
+| artifact-repo-url               | The private repository where signed out-of-tree kernel modules will be pushed                                                      | No       | -                                                         |
+| artifact-branch                 | The branch in the private repository for out-of-tree kernel modules                                                                | Yes      | main                                                      |                               | vendor                          | The name of the vendor of the kernel modules                                                                                       | No       | -                                                         |                               | signing-secret                  | The secret containing signUser, SignHost and SignKey                                                                               | No       | -                                                         |
+| signingAuthor                   | The name of the author that rh-signing-client will set for --onbehalfof                                                            | No       | -                                                         |

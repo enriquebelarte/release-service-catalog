@@ -1,0 +1,25 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-push-oot-kmods
+spec:
+  description: |
+    Run the push-oot-kmods task and verify the results
+  workspaces:
+    - name: tests-workspace
+  tasks:
+    - name: push-oot-kmods
+      workspaces:
+        - name: data
+          workspace: tests-workspace
+      taskSpec:
+        workspaces:
+          - name: data
+        steps:
+          - name: dummy-test
+            image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+            script: |
+              #!/usr/bin/env sh
+              set -eux
+              echo "Dummy tekton test"
