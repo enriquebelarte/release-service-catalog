@@ -1,0 +1,179 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-collect-oot-sign-params
+spec:
+  description: |
+    Run the collect-oot-sign-params task and verify the results
+  workspaces:
+    - name: tests-workspace
+  tasks:
+    - name: setup
+      workspaces:
+        - name: data
+          workspace: tests-workspace
+      taskSpec:
+        workspaces:
+          - name: data
+        steps:
+          - name: setup-values
+            image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+            script: |
+              #!/usr/bin/env sh
+              set -eux
+
+              cat > "$(workspaces.data.path)"/data.json << EOF
+              {
+                "ootsign": {
+                  "signing-secret": "my-secret",
+                  "checksumFingerprint": "my-fprint",
+                  "checksumKeytab": "my-keytab",
+                  "kmodsPath": "my-kmods",
+                  "vendor": "my-vendor",
+                  "artifact-repo-url": "my-artifact-url",
+                  "artifact-branch": "my-artifact-branch",
+                  "artifact-repo-token": "my-artifact-repo-token"
+                }
+              }
+              EOF
+              cat > "$(workspaces.data.path)"/snapshot.json << EOF
+              {
+                "application": "my-signing-app",
+                "components": [
+                  {
+                    "name": "comp",
+                    "containerImage": "registry.io/image:tag"
+                  }
+                ]
+              }
+              EOF
+    - name: run-task
+      taskRef:
+        name: collect-oot-sign-params
+      params:
+        - name: snapshotPath
+          value: snapshot.json
+        - name: dataPath
+          value: data.json
+      workspaces:
+        - name: data
+          workspace: tests-workspace
+      runAfter:
+        - setup
+    - name: check-result
+      params:
+        - name: checksumFingerprint 
+          value: $(tasks.run-task.results.checksumFingerprint)
+        - name: checksumKeytab
+          value: $(tasks.run-task.results.checksumKeytab)
+        - name: signing-secret 
+          value: $(tasks.run-task.results.signing-secret)
+        - name: kmodsPath
+          value: $(tasks.run-task.results.kmodsPath)
+        - name: vendor
+          value: $(tasks.run-task.results.vendor)
+        - name: artifact-repo-url
+          value: $(tasks.run-task.results.artifact-repo-url)
+        - name: artifact-repo-token
+          value: $(tasks.run-task.results.artifact-repo-token)
+        - name: artifact-branch
+          value: $(tasks.run-task.results.artifact-branch)
+      taskSpec:
+        params:
+          - name: checksumFingerprint
+          - name: checksumKeytab
+          - name: signing-secret
+          - name: kmodsPath
+          - name: vendor
+          - name: artifact-repo-url
+          - name: artifact-repo-token
+          - name: artifact-branch
+        steps:
+          - name: check-result
+            image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+            env:
+              - name: "checksumFingerprint"
+                value: '$(params.checksumFingerprint)'
+              - name: "checksumKeytab"
+                value: '$(params.checksumKeytab)'
+              - name: "signing_secret"
+                value: '$(params.signing-secret)'
+              - name: "kmodsPath"
+                value: '$(params.kmodsPath)'
+              - name: "vendor"
+                value: '$(params.vendor)'
+              - name: "artifact_repo_url"
+                value: '$(params.artifact-repo-url)'
+              - name: "artifact_repo_token"
+                value: '$(params.artifact-repo-token)'
+              - name: "artifact_branch"
+                value: '$(params.artifact-branch)'
+
+            script: |
+              #!/usr/bin/env sh
+              set -eux
+
+              # shellcheck disable=SC2154
+              if [ "$checksumFingerprint" = "my-fprint" ]; then
+                  echo "checksumFingerprint found "
+              else
+                  echo "checksumFingerprint empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$checksumKeytab" = "my-keytab" ]; then
+                  echo "checksumKeytab found "
+              else
+                  echo "checksumKeytab empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$signing_secret" = "my-secret" ]; then
+                  echo "signing-secret found "
+              else
+                  echo "signing-secret empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$kmodsPath" = "my-kmods" ]; then
+                  echo "kmodsPath found "
+              else
+                  echo "kmodsPath empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$vendor" = "my-vendor" ]; then
+                  echo "vendor found "
+              else
+                  echo "vendor empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$artifact_repo_url" = "my-artifact-url" ]; then
+                  echo "artifact-repo-url found "
+              else
+                  echo "artifact-repo-url empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$artifact_repo_token" = "my-artifact-repo-token" ]; then
+                  echo "artifact-repo-token found "
+              else
+                  echo "artifact-repo-token empty or invalid"
+                  exit 1
+              fi
+
+              # shellcheck disable=SC2154
+              if [ "$artifact_branch" = "my-artifact-branch" ]; then
+                  echo "artifact-branch-token found "
+              else
+                  echo "artifact-branch empty or invalid"
+                  exit 1
+              fi

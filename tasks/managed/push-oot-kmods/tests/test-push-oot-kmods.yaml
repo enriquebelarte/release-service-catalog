@@ -1,0 +1,109 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-push-oot-kmods
+spec:
+  description: |
+    Run the push-oot-kmods task and verify the results
+  workspaces:
+    - name: tests-workspace
+  tasks:
+    - name: setup
+      params:
+        - name: signedKmodsPath
+          value: local-dir 
+        - name: vendor
+          value: mocked-vendor
+      workspaces:
+        - name: signed-kmods 
+          workspace: tests-workspace
+      taskSpec:
+        workspaces:
+          - name: signed-kmods
+        params:
+          - name: signedKmodsPath
+            type: string
+            description: The subdirectory within the workspace for the kmods.
+          - name: vendor
+            type: string
+            description: The vendor name for the driver.
+        steps:
+          - name: setup-env
+            image: quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+              # Set all needed dirs and files
+              SIGNED_KMODS_PATH="$(workspaces.signed-kmods.path)/$(params.signedKmodsPath)"
+              mkdir -p "$SIGNED_KMODS_PATH"
+              cd "$SIGNED_KMODS_PATH"
+              cat > envfile << EOF
+              DRIVER_VERSION=0.1
+              DRIVER_VENDOR=$(params.vendor)
+              KERNEL_VERSION=5.4.0
+              EOF
+              cp envfile mocked-envfile
+              echo "MODULE1" > "mod1.ko"
+              echo "MODULE2" > "mod2.ko"
+
+    - name: run-task
+      taskRef:
+        name: push-oot-kmods
+      params: 
+        - name: signedKmodsPath
+          value: local-dir
+        - name: vendor
+          value: mocked-vendor
+        - name: artifactRepoUrl
+          value: my-repository.mock/kmods-repo
+        - name: artifactBranch
+          value: main
+        - name: artifactRepoToken
+          value: repotoken
+      workspaces:
+        - name: signed-kmods
+          workspace: tests-workspace
+      runAfter:
+        - setup
+
+    - name: check-result
+      params:
+        - name: signedKmodsPath
+          value: local-dir
+      workspaces:
+        - name: signed-kmods
+          workspace: tests-workspace
+      runAfter:
+        - run-task
+      taskSpec:
+        workspaces:
+          - name: signed-kmods
+        params:
+          - name: signedKmodsPath
+        steps:
+          - name: check-result
+            image: quay.io/konflux-ci/release-service-utils:6556e8a6b031c1aad4f0472703fd121a6e1cd45d
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+              SIGNED_KMODS_PATH="$(workspaces.signed-kmods.path)/$(params.signedKmodsPath)"
+              cd "${SIGNED_KMODS_PATH}"
+              # shellcheck source=/dev/null
+              . ./mocked-envfile
+              VENDOR_DIR="${DRIVER_VENDOR}_${DRIVER_VERSION}_${KERNEL_VERSION}"
+              MOD_DIR="${SIGNED_KMODS_PATH}/local-artifacts/${VENDOR_DIR}"
+
+              # Check if modules to be pushed exist
+              shopt -s nullglob
+              files=("${MOD_DIR}"/*.ko)
+              
+              if [ ${#files[@]} -gt 0 ]; then
+                  echo "Found modules:"
+                  for f in "${files[@]}"; do
+                      echo "  - $f"
+                  done
+              else
+                  echo "ERR: No modules found"
+                  exit 1
+              fi

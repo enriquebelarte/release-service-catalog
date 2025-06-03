@@ -1,0 +1,98 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: collect-oot-sign-params
+  labels:
+    app.kubernetes.io/version: "0.0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: release
+spec:
+  description: >-
+    Tekton task that collects configuration settings for the OOT kernel modules signing from the data file
+  params:
+    - name: dataPath
+      type: string
+      description: Path to the JSON string of the merged data containing the pyxis configuration options to use
+    - name: snapshotPath
+      type: string
+      description: Path to the JSON string of the mapped Snapshot spec in the data workspace
+  workspaces:
+    - name: data
+      description: The workspace where the snapshot spec json file resides
+  results:
+    - name: checksumFingerprint
+      type: string
+      description: Secret containing the host key database for SSH the server running signing
+    - name: checksumKeytab
+      type: string
+      description: Secret containing keytab file for the Kerberos user / server
+    - name: signing-secret
+      type: string
+      description: Secret containing the fields signHost, SignKey and SignUser
+    - name: kmodsPath
+      type: string
+      description: Path to the directory containing built oot kernel modules
+    - name: vendor
+      type: string
+      description: Name of the oot modules vendor
+    - name: artifact-repo-url
+      type: string
+      description: Repository URL where signed modules will be pushed
+    - name: artifact-branch
+      type: string
+      description: Branch where signed modules will be pushed
+    - name: artifact-repo-token
+      type: string
+      description: Secret containing access token to push signed modules
+  steps:
+    - name: collect-oot-sign-params
+      image:
+        quay.io/konflux-ci/release-service-utils:e633d51cd41d73e4b3310face21bb980af7a662f
+      computeResources:
+        limits:
+          memory: 128Mi
+        requests:
+          memory: 128Mi
+          cpu: 50m
+      script: |
+        #!/usr/bin/env bash
+        set -x
+
+        DATA_FILE="$(workspaces.data.path)/$(params.dataPath)"
+        if [ ! -f "${DATA_FILE}" ] ; then
+            echo "No valid data file was provided."
+            exit 1
+        fi
+
+        SNAPSHOT_SPEC_FILE="$(workspaces.data.path)/$(params.snapshotPath)"
+        if [ ! -f "${SNAPSHOT_SPEC_FILE}" ] ; then
+            echo "No valid snapshot file was provided."
+            exit 1
+        fi
+
+        # Check that secrets exist
+        if [ "$(jq '.ootsign | has("signing-secret")' "$DATA_FILE")" = false ] ; then
+            echo "GitHub secret missing in data JSON file"
+            exit 1
+        fi
+
+        if [ "$(jq '.ootsign | has("checksumFingerprint")' "$DATA_FILE")" = false ] ; then
+            echo "GitHub secret missing in data JSON file"
+            exit 1
+        fi
+
+        if [ "$(jq '.ootsign | has("checksumKeytab")' "$DATA_FILE")" = false ] ; then
+            echo "GitHub secret missing in data JSON file"
+            exit 1
+        fi
+        
+        jq -r '.ootsign."signing-secret"' "$DATA_FILE"  | tr -d '\n\r' > "$(results.signing-secret.path)"
+        jq -r '.ootsign.checksumFingerprint' "$DATA_FILE" | tr -d '\n\r' > "$(results.checksumFingerprint.path)"
+        jq -r '.ootsign.checksumKeytab' "$DATA_FILE" | tr -d '\n\r' > "$(results.checksumKeytab.path)"
+        jq -r '.ootsign.kmodsPath' "$DATA_FILE" | tr -d '\n\r' > "$(results.kmodsPath.path)"
+        jq -r '.ootsign.vendor' "$DATA_FILE" | tr -d '\n\r' > "$(results.vendor.path)"
+        jq -r '.ootsign."artifact-repo-url"' "$DATA_FILE" | tr -d '\n\r' > "$(results.artifact-repo-url.path)"
+        jq -r '.ootsign."artifact-branch"' "$DATA_FILE" | tr -d '\n\r' > "$(results.artifact-branch.path)"
+        jq -r '.ootsign."artifact-repo-token"' "$DATA_FILE" | tr -d '\n\r' > "$(results.artifact-repo-token.path)"

@@ -1,0 +1,91 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-sign-oot-kmods
+spec:
+  description: |
+    Run the sign-oot-kmods task and verify the results
+  workspaces:
+    - name: tests-workspace
+  tasks:
+    - name: setup
+      workspaces:
+        - name: kmods 
+          workspace: tests-workspace
+      taskSpec:
+        workspaces:
+          - name: kmods
+        steps:
+          - name: setup-values
+            image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
+            script: |
+              #!/usr/bin/env sh
+              set -eux
+
+              echo "Creating dummy kmods to be signed..."
+              mkdir "$(workspaces.kmods.path)"/kmods/
+              echo "MODULE1" > "$(workspaces.kmods.path)"/kmods/mod1.ko
+              echo "MODULE2" > "$(workspaces.kmods.path)"/kmods/mod2.ko
+              tee "$(workspaces.kmods.path)/data.json" <<EOF
+                  {
+                   "oot-sign": {
+                  	 "signedKmodsPath": "kmods",
+                  	 "kmodsPath": "/mykmods",
+                  	 "signingAuthor": "John Doe"
+                   }
+                  }
+              EOF
+    - name: run-task
+      taskRef:
+        name: sign-oot-kmods
+      params:
+        - name: dataPath
+          value: $(workspaces.kmods.path)/data.json
+        - name: signedKmodsPath
+          value: kmods
+        - name: signingAuthor
+          value: The dummy signer
+        - name: kerberosRealm
+          value: IPA.REDHAT.COM
+        - name: signing-secret
+          value: my-mocked-secret
+        - name: checksumFingerprint
+          value: checksum-fingerprint
+        - name: checksumKeytab
+          value: build-and-sign-keytab
+      workspaces:
+        - name: kmods
+          workspace: tests-workspace
+      runAfter:
+        - setup
+
+    - name: check-result
+      params:
+        - name: signedKmodsPath
+          value: kmods
+      workspaces:
+        - name: kmods
+          workspace: tests-workspace
+      runAfter:
+        - run-task
+      taskSpec:
+        workspaces:
+          - name: kmods
+        params:
+          - name: signedKmodsPath
+        steps:
+          - name: check-result
+            image: quay.io/konflux-ci/release-service-utils:6556e8a6b031c1aad4f0472703fd121a6e1cd45d
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+
+              FILE="$(workspaces.kmods.path)/mock_scp.txt"
+              
+              if grep -q 'mod1.ko' "$FILE" && grep -q 'mod2.ko' "$FILE"; then
+                echo "Found both mod1.ko and mod2.ko in $FILE"
+              else
+                echo "One or both .ko files not found in $FILE"
+                exit 1
+              fi
