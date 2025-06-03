@@ -1,0 +1,240 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline 
+metadata:
+  name: test-extract-kmods-from-image
+spec:
+  description: >-
+    Run the extract kernel modules task from an image in a specific directory.
+  workspaces:
+    - name: tests-workspace
+  params:
+    - name: ociStorage
+      description: The OCI repository where the Trusted Artifacts are stored.
+      type: string
+    - name: ociArtifactExpiresAfter
+      description: Expiration date for the trusted artifacts created in the
+        OCI repository. An empty string means the artifacts do not expire.
+      type: string
+      default: "1d"
+    - name: orasOptions
+      description: oras options to pass to Trusted Artifacts calls
+      type: string
+      default: "--insecure"
+    - name: trustedArtifactsDebug
+      description: Flag to enable debug logging in trusted artifacts. Set to a non-empty string to enable.
+      type: string
+      default: ""
+    - name: dataDir
+      description: The location where data will be stored
+      type: string
+      default: "/workspace/data"
+    - name: taskGitUrl
+      type: string
+      description: The git repository URL for task and StepAction resolution
+      default: https://github.com/enriquebelarte/release-service-catalog.git
+    - name: taskGitRevision
+      type: string
+      description: The git revision for task and StepAction resolution
+      default: signed-kmods-release
+  tasks:
+    - name: setup
+      workspaces:
+        - name: input-data
+          workspace: tests-workspace
+      taskSpec:
+        params:
+          - name: dataDir
+            type: string
+        workspaces:
+          - name: input-data
+        steps:
+          - name: setup-values
+            image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+              
+              # Create the trusted artifacts data directory structure
+              mkdir -p "$(params.dataDir)"
+              
+              # Create mock data in workspace for the mocks to find
+              mkdir -p "$(workspaces.input-data.path)"/kmods
+              touch "$(workspaces.input-data.path)"/kmods/mod1.ko
+              touch "$(workspaces.input-data.path)"/kmods/mod2.ko
+              touch "$(workspaces.input-data.path)"/manifest.json
+      params:
+        - name: dataDir
+          value: $(params.dataDir)
+    
+    - name: run-task
+      taskRef:
+        name: extract-kmods-from-image
+      params: 
+        - name: kmodsPath
+          value: /kmods 
+        - name: signedKmodsPath
+          value: signed-kmods
+        - name: snapshot
+          value: my-snapshot
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: ociArtifactExpiresAfter
+          value: $(params.ociArtifactExpiresAfter)
+        - name: orasOptions
+          value: $(params.orasOptions)
+        - name: trustedArtifactsDebug
+          value: $(params.trustedArtifactsDebug)
+        - name: sourceDataArtifact
+          value: ""
+        - name: dataDir
+          value: $(params.dataDir)
+      workspaces:
+        - name: input-data
+          workspace: tests-workspace
+      runAfter:
+        - setup
+
+    - name: check-result
+      taskSpec:
+        params:
+          - name: dataDir
+            type: string
+          - name: ociStorage
+            type: string
+          - name: sourceDataArtifact
+            type: string
+            default: ""
+          - name: taskGitUrl
+            type: string
+          - name: taskGitRevision
+            type: string
+        workspaces:
+          - name: input-data
+        volumes:
+          - name: workdir
+            emptyDir: {}
+        stepTemplate:
+          volumeMounts:
+            - mountPath: /var/workdir
+              name: workdir
+          env:
+            - name: "ORAS_OPTIONS"
+              value: "--insecure"
+            - name: "DEBUG"
+              value: ""
+        steps:
+          - name: use-trusted-artifact
+            image: quay.io/redhat-appstudio/build-trusted-artifacts:e02102ede09aa07187cba066ad547a54724e5cf4
+            env:
+              - name: HOME
+                value: /tekton/home
+            script: |
+              #!/usr/bin/env bash
+              # Only try to use trusted artifact if sourceDataArtifact is not empty/dummy
+              if [ -n "$(params.sourceDataArtifact)" ] && [ "$(params.sourceDataArtifact)" != "empty" ]; then
+                echo "Using trusted artifact: $(params.sourceDataArtifact)"
+                # Call the trusted artifacts command directly like the StepAction does
+                /usr/bin/build-trusted-artifacts use "$(params.sourceDataArtifact)=$(params.dataDir)"
+              else
+                echo "No trusted artifact to use (sourceDataArtifact: '$(params.sourceDataArtifact)')"
+              fi
+          - name: check-values
+            image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+              
+              # When ociStorage is "empty", trusted artifacts are skipped and data is copied to workspace
+              if [ "$(params.ociStorage)" = "empty" ]; then
+                echo "INFO: ociStorage is empty, trusted artifacts are skipped"
+                echo "Checking workspace for extracted data (primary location when artifacts skipped)"
+                
+                # Check workspace for extracted data (this should be the primary location now)
+                if [ -d "$(workspaces.input-data.path)/signed-kmods" ]; then
+                  echo "SUCCESS: Found signed-kmods directory in workspace"
+                  
+                  # Check if any .ko files exist in the signed-kmods directory
+                  if ls "$(workspaces.input-data.path)/signed-kmods"/*.ko 1> /dev/null 2>&1; then
+                    echo "Kernel module files were extracted successfully"
+                    echo "Found files:"
+                    ls -la "$(workspaces.input-data.path)/signed-kmods"
+                  else
+                    echo "Warning: No .ko files found in signed-kmods directory"
+                    echo "Directory contents:"
+                    ls -la "$(workspaces.input-data.path)/signed-kmods" || echo "Directory does not exist or is empty"
+                  fi
+                  
+                  # Check if envfile was copied
+                  if [ -f "$(workspaces.input-data.path)/signed-kmods/envfile" ]; then
+                    echo "Environment file was copied successfully"
+                    cat "$(workspaces.input-data.path)/signed-kmods/envfile"
+                  else
+                    echo "Warning: envfile not found"
+                  fi
+                  
+                  echo "SUCCESS: Test passed - data found in workspace as expected when trusted artifacts are skipped"
+                else
+                  echo "ERR: signed-kmods not found in workspace"
+                  echo "Workspace contents:"
+                  ls -la "$(workspaces.input-data.path)" || true
+                  
+                  # Also check dataDir for debugging
+                  echo "Checking dataDir location (should be temporary when artifacts skipped):"
+                  ls -la "$(params.dataDir)" 2>/dev/null || echo "dataDir does not exist"
+                  
+                  echo "FAIL: Expected signed-kmods directory in workspace when trusted artifacts are skipped"
+                  exit 1
+                fi
+              else
+                # When ociStorage is provided, check dataDir for persisted trusted artifacts data
+                echo "INFO: ociStorage is provided, checking dataDir for trusted artifacts data"
+                echo "DataDir: $(params.dataDir)"
+                echo "SourceDataArtifact: $(params.sourceDataArtifact)"
+                
+                if [ -d "$(params.dataDir)/signed-kmods" ]; then
+                  echo "SUCCESS: Signed kmods directory was found in dataDir"
+                  
+                  # Check if any .ko files exist in the signed-kmods directory
+                  if ls "$(params.dataDir)/signed-kmods"/*.ko 1> /dev/null 2>&1; then
+                    echo "Kernel module files were extracted successfully"
+                    echo "Found files:"
+                    ls -la "$(params.dataDir)/signed-kmods"
+                  else
+                    echo "Warning: No .ko files found in signed-kmods directory"
+                    echo "Directory contents:"
+                    ls -la "$(params.dataDir)/signed-kmods" || echo "Directory does not exist or is empty"
+                  fi
+                  
+                  # Check if envfile was copied
+                  if [ -f "$(params.dataDir)/signed-kmods/envfile" ]; then
+                    echo "Environment file was copied successfully"
+                    cat "$(params.dataDir)/signed-kmods/envfile"
+                  else
+                    echo "Warning: envfile not found"
+                  fi
+                  
+                  echo "SUCCESS: Test passed - data found in dataDir as expected when trusted artifacts are used"
+                else
+                  echo "ERR: Signed kmods directory was not found in dataDir"
+                  echo "Available directories in dataDir:"
+                  ls -la "$(params.dataDir)" || echo "dataDir does not exist"
+                  exit 1
+                fi
+              fi
+      params:
+        - name: dataDir
+          value: $(params.dataDir)  
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: sourceDataArtifact
+          value: $(tasks.run-task.results.sourceDataArtifact)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)
+      workspaces:
+        - name: input-data
+          workspace: tests-workspace
+      runAfter:
+        - run-task

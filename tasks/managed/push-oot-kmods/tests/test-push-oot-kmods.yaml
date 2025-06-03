@@ -1,0 +1,172 @@
+---
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: test-push-oot-kmods
+spec:
+  description: |
+    Run the push-oot-kmods task and verify the results
+  workspaces:
+    - name: tests-workspace
+  params:
+    - name: ociStorage
+      description: The OCI repository where the Trusted Artifacts are stored.
+      type: string
+      default: "empty"
+    - name: ociArtifactExpiresAfter
+      description: Expiration date for the trusted artifacts created in the
+        OCI repository. An empty string means the artifacts do not expire.
+      type: string
+      default: "1d"
+    - name: orasOptions
+      description: oras options to pass to Trusted Artifacts calls
+      type: string
+      default: "--insecure"
+    - name: trustedArtifactsDebug
+      description: Flag to enable debug logging in trusted artifacts. Set to a non-empty string to enable.
+      type: string
+      default: ""
+    - name: dataDir
+      description: The location where data will be stored
+      type: string
+      default: "/var/workdir/release"
+    - name: taskGitUrl
+      type: string
+      description: The git repository URL for task and StepAction resolution
+      default: https://github.com/konflux-ci/release-service-catalog.git
+    - name: taskGitRevision
+      type: string
+      description: The git revision for task and StepAction resolution
+      default: main
+  tasks:
+    - name: run-task
+      taskRef:
+        name: push-oot-kmods
+      params: 
+        - name: signedKmodsPath
+          value: signed-kmods
+        - name: vendor
+          value: mocked-vendor
+        - name: artifactRepoUrl
+          value: my-repository.mock/kmods-repo
+        - name: artifactBranch
+          value: main
+        - name: artifactRepoToken
+          value: repotoken
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: ociArtifactExpiresAfter
+          value: $(params.ociArtifactExpiresAfter)
+        - name: orasOptions
+          value: $(params.orasOptions)
+        - name: trustedArtifactsDebug
+          value: $(params.trustedArtifactsDebug)
+        - name: sourceDataArtifact
+          value: ""
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)
+      workspaces:
+        - name: signed-kmods
+          workspace: tests-workspace
+
+    - name: check-result
+      taskSpec:
+        params:
+          - name: signedKmodsPath
+            type: string
+          - name: dataDir
+            type: string
+          - name: ociStorage
+            type: string
+          - name: sourceDataArtifact
+            type: string
+            default: ""
+          - name: taskGitUrl
+            type: string
+          - name: taskGitRevision
+            type: string
+        workspaces:
+          - name: signed-kmods
+        volumes:
+          - name: workdir
+            emptyDir: {}
+        stepTemplate:
+          volumeMounts:
+            - mountPath: /var/workdir
+              name: workdir
+          env:
+            - name: "ORAS_OPTIONS"
+              value: "--insecure"
+            - name: "DEBUG"
+              value: ""
+        steps:
+          - name: use-trusted-artifact
+            image: quay.io/redhat-appstudio/build-trusted-artifacts:e02102ede09aa07187cba066ad547a54724e5cf4
+            env:
+              - name: HOME
+                value: /tekton/home
+            args:
+              - use
+              - $(params.sourceDataArtifact)=$(params.dataDir)
+          - name: check-result
+            image: quay.io/konflux-ci/release-service-utils:6556e8a6b031c1aad4f0472703fd121a6e1cd45d
+            script: |
+              #!/usr/bin/env bash
+              set -eux
+              
+              # Determine the correct path based on trusted artifacts mode
+              if [ "$(params.ociStorage)" = "empty" ]; then
+                echo "INFO: ociStorage is empty, checking workspace"
+                SIGNED_KMODS_PATH="$(workspaces.signed-kmods.path)/$(params.signedKmodsPath)"
+              else
+                echo "INFO: ociStorage provided, checking dataDir"
+                SIGNED_KMODS_PATH="$(params.dataDir)/$(params.signedKmodsPath)"
+              fi
+              
+              cd "${SIGNED_KMODS_PATH}"
+              # shellcheck source=/dev/null
+              . ./mocked-envfile
+              VENDOR_DIR="${DRIVER_VENDOR}_${DRIVER_VERSION}_${KERNEL_VERSION}"
+              MOD_DIR="${SIGNED_KMODS_PATH}/local-artifacts/${VENDOR_DIR}"
+
+              # Check if modules to be pushed exist
+              shopt -s nullglob
+              files=("${MOD_DIR}"/*.ko)
+              
+              if [ ${#files[@]} -gt 0 ]; then
+                  echo "SUCCESS: Found modules:"
+                  for f in "${files[@]}"; do
+                      echo "  - $f"
+                  done
+              else
+                  echo "ERR: No modules found in $MOD_DIR"
+                  echo "Available directories:"
+                  ls -la "${SIGNED_KMODS_PATH}" || echo "Path does not exist"
+                  if [ -d "${SIGNED_KMODS_PATH}/local-artifacts" ]; then
+                    echo "Contents of local-artifacts:"
+                    ls -la "${SIGNED_KMODS_PATH}/local-artifacts"
+                  fi
+                  exit 1
+              fi
+      params:
+        - name: signedKmodsPath
+          value: signed-kmods
+        - name: dataDir
+          value: $(params.dataDir)  
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: sourceDataArtifact
+          value: $(tasks.run-task.results.sourceDataArtifact)
+        - name: taskGitUrl
+          value: $(params.taskGitUrl)
+        - name: taskGitRevision
+          value: $(params.taskGitRevision)
+      workspaces:
+        - name: signed-kmods
+          workspace: tests-workspace
+      runAfter:
+        - run-task
