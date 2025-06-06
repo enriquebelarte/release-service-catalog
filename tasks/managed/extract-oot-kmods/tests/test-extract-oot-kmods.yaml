@@ -78,7 +78,7 @@ spec:
           workspace: tests-workspace
       params:
         - name: kmods_path
-          value: $(tasks.run-task.results.kmods_path)
+          value: $(tasks.run-task.results.kmodsPath)
       taskSpec:
         workspaces:
           - name: data
