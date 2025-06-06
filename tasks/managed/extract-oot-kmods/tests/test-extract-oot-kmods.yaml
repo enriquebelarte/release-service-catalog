@@ -61,11 +61,11 @@ spec:
       taskRef:
         name: extract-kmods-from-image
       params:
-        - name: image_kmods_path
+        - name: kmodsPath
           value: my-kmods-path
-        - name: snapshotPath
-          value: snapshot.json
-        - name: subdirectory
+        - name: snapshot
+          value: snapshot
+        - name: signedKmodsPath 
           value: my-subdir
       workspaces:
         - name: data
