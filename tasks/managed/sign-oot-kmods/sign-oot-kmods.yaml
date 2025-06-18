@@ -74,15 +74,10 @@ spec:
       script: |
         #!/usr/bin/env bash
         set -eux
-        DATA_FILE="$(params.dataPath)"
-        if [ ! -f "${DATA_FILE}" ] ; then
-            echo "No valid data file was provided."
-            exit 1
-        fi
-        # Get params from data file
-        signedKmodsPath=$(jq -r '."oot-sign".signedKmodsPath' "$DATA_FILE")
-        kmodsPath=$(jq -r '."oot-sign".kmodsPath' "$DATA_FILE")
-        signingAuthor=$(jq -r '."oot-sign".signingAuthor' "$DATA_FILE")
+        
+        signedKmodsPath="$(params.signedKmodsPath)"
+        kmodsPath="$(params.KmodsPath)"
+        signingAuthor="$(params.signingAuthor)"
         # Remove newline in signing variables 
         signUser="${signUser//$'\n'/}"
         signHost="${signHost//$'\n'/}"
