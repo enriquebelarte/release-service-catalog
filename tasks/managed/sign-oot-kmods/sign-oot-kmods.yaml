@@ -76,13 +76,12 @@ spec:
         set -eux
         
         signedKmodsPath="$(params.signedKmodsPath)"
-        kmodsPath="$(params.KmodsPath)"
         signingAuthor="$(params.signingAuthor)"
         # Remove newline in signing variables 
         signUser="${signUser//$'\n'/}"
         signHost="${signHost//$'\n'/}"
          
-        echo "Signing OOT modules from $(workspaces.kmods.path)/$kmodsPath..."
+        echo "Signing OOT modules from $(workspaces.kmods.path)$signedKmodsPath.."
         SIGNED_KMODS_PATH="$(workspaces.kmods.path)/$signedKmodsPath"
         SSH_OPTS=(
           -o UserKnownHostsFile=/root/.ssh/known_hosts
