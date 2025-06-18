@@ -47,7 +47,13 @@ spec:
       description: The workspace where unsigned kernel modules are.
   steps:
     - name: sign-files
-      image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267 
+      image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
+      computeResources:
+        limits:
+          memory: 512Mi
+        requests:
+          memory: 512Mi
+          cpu: 250m 
       volumeMounts:
         - name: checksum-fingerprint
           mountPath: "/etc/sec-checksum"
