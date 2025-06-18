@@ -615,6 +615,18 @@
         "signingAuthor": {
            "type": "string",
            "description": "The name of the author that rh-signing-client will set for --onbehalfof"
+        },
+        "artifact-repo-token": {
+           "type": "string",
+           "description": "Secret containing access token to push signed modules"
+        },
+        "checksumFingerprint": {
+           "type": "string",
+           "description": "Secret containing the host key database for SSH the server running signing"
+        },
+        "checksumKeytab": {
+           "type": "string",
+           "description": "Secret containing keytab file for the Kerberos user/server"
         }
       }
     },
