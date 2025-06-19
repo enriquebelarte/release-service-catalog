@@ -2,12 +2,6 @@
 
 Tekton task that signs out-of-tree kernel modules.
 
-The path to the directory inside the provided workspace where the binaries were
-saved is provided as a result.
-
-The binaries must be stored at the same `image_binaries_path` for each component
-passed.
-
 ## Parameters
 
 | Name                | Description                                                                | Optional | Default value         |
