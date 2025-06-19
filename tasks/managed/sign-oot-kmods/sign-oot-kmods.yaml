@@ -26,11 +26,9 @@ spec:
       description: Human name responsible for the signing process
     - name: checksumFingerprint
       type: string
-      default: checksum-fingerprint
       description: Secret containing the host key database for SSH the server running signing
     - name: checksumKeytab
       type: string
-      default: build-and-sign-keytab
       description: Secret containing keytab file for the Kerberos user / server
     - name: signing-secret
       type: string

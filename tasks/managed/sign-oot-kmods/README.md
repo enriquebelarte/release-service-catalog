@@ -15,6 +15,6 @@ passed.
 | dataPath            | Path to the data JSON in the data workspace                                | No       | -                     |
 | signedKmodsPath     | Path where the kernel modules are stored in the workspace                  | No       | -                     |
 | signingAuthor       | Human name responsible for the signing process                             | No       | -                     |
-| checkSumFingerprint | Secret containing the host key database for SSH the server running signing | No       | checksum-fingerprint  |
-| checkSumKeytab      | Secret containing keytab file for the Kerberos user / server               | No       | build-and-sign-keytab |
-| signing-secret      | Secret containing the fields signHost, SignKey and SignUser                | No       | -                     |
+| checkSumFingerprint | Secret containing the host key database for SSH the server running signing | No       | -                     |
+| checkSumKeytab      | Secret containing keytab file for the Kerberos user / server               | No       | -                     |
+| signing-secret      | Secret containing the fields signHost, SignKey and SignUser                | No       | -                     || kerberosRealm       | Kerberos realm for the checksum host                                       | No       | -                     |

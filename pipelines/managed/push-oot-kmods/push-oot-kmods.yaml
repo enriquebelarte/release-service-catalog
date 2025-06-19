@@ -54,8 +54,6 @@ spec:
     - name: verify_ec_task_git_revision
       type: string
       description: The git revision to be used when consuming the verify-conforma task    
-    - name: releasedVersion
-      type: string
     - name: taskGitRevision
       type: string
       default: main
@@ -234,8 +232,6 @@ spec:
           value: $(params.kmodsPath)
         - name: signedKmodsPath
           value: $(params.signedKmodsPath)
-        - name: releasedVersion
-          value: $(params.releasedVersion)
         - name: snapshot
           value: $(params.snapshot)
         - name: remoteRegistry

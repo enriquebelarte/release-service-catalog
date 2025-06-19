@@ -988,7 +988,7 @@
         "properties": {
           "systems": {
             "contains": {
-              "const": "oot-sign"
+              "const": "ootsign"
             }
           }
         }
