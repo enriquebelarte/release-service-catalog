@@ -50,6 +50,10 @@ spec:
           value: IPA.REDHAT.COM
         - name: signing-secret
           value: my-mocked-secret
+        - name: checksumFingerprint
+          value: checksum-fingerprint
+        - name: checksumKeytab
+          value: build-and-sign-keytab
       workspaces:
         - name: kmods
           workspace: tests-workspace
