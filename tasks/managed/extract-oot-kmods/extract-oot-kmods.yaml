@@ -44,7 +44,7 @@ spec:
                     jq -er '.metadata.annotations["build.appstudio.redhat.com/commit_sha"]')
         source_image=$(echo "$snapshot_json" | \
                     jq -r '.spec.components[].containerImage' | sed 's/@.*$//')
-        echo "$snapshot_json" | jq -r '.spec.components[].containerImage'
+        jq -r '.spec.components[].containerImage' <<< "$snapshot_json"
         SRC_IMAGE="$source_image:$sha_image"
         TMP_DIR=$(mktemp -d)
         echo "Copying $SRC_IMAGE to $TMP_DIR..."
