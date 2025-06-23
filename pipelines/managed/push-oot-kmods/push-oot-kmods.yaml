@@ -53,7 +53,24 @@ spec:
       description: The location of the bundle containing the verify-enterprise-contract task
     - name: verify_ec_task_git_revision
       type: string
-      description: The git revision to be used when consuming the verify-conforma task    
+      description: The git revision to be used when consuming the verify-conforma task
+    - name: ociStorage
+      type: string
+      default: "quay.io/konflux-ci/release-service-trusted-artifacts"
+    - name: orasOptions
+      description: oras options to pass to Trusted Artifacts calls
+      type: string
+      default: ""
+    - name: trustedArtifactsDebug
+      description: Flag to enable debug logging in trusted artifacts. Set to a non-empty string to enable.
+      type: string
+      default: ""
+    - name: dataDir
+      description: The location where data will be stored
+      type: string
+      # to avoid tar extraction errors, we need to specify a subdirectory
+      # inside the volume.
+      default: "/var/workdir/release"
     - name: taskGitRevision
       type: string
       default: main
@@ -113,6 +130,12 @@ spec:
           value: "$(params.taskGitUrl)"
         - name: taskGitRevision
           value: "$(params.taskGitRevision)"
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
       workspaces:
         - name: data
           workspace: release-workspace
@@ -127,6 +150,14 @@ spec:
         - name: systems
           value:
             - ootsign
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
         - name: taskGitUrl
           value: "$(params.taskGitUrl)"
         - name: taskGitRevision
@@ -156,6 +187,14 @@ spec:
           - name: pathInRepo
             value: tasks/managed/collect-oot-sign-params/collect-oot-sign-params.yaml
       params:
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
         - name: releasePath
           value: "$(tasks.collect-data.results.release)"
         - name: snapshotPath
@@ -180,30 +219,43 @@ spec:
       params:
         - name: snapshotPath
           value: "$(tasks.collect-data.results.snapshotSpec)"
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
+        - name: taskGitUrl
+          value: "$(params.taskGitUrl)"
+        - name: taskGitRevision
+          value: "$(params.taskGitRevision)"
       workspaces:
         - name: data
           workspace: release-workspace
       runAfter:
         - collect-data
-    - name: verify-enterprise-contract
+    - name: verify-conforma
+      timeout: "4h00m0s"
       taskRef:
-        resolver: "bundles"
+        resolver: "git"
         params:
-          - name: bundle
-            value: $(params.verify_ec_task_bundle)
-          - name: kind
-            value: task
-          - name: name
-            value: verify-enterprise-contract
+          - name: url
+            value: https://github.com/enterprise-contract/ec-cli
+          - name: revision
+            value: "$(params.verify_ec_task_git_revision)"
+          - name: pathInRepo
+            value: "tasks/verify-conforma-konflux-ta/0.1/verify-conforma-konflux-ta.yaml"
       params:
-        - name: IMAGES
-          value: "$(workspaces.data.path)/$(tasks.collect-data.results.snapshotSpec)"
+        - name: SNAPSHOT_FILENAME
+          value: "$(tasks.collect-data.results.snapshotSpec)"
         - name: SSL_CERT_DIR
           value: /var/run/secrets/kubernetes.io/serviceaccount
         - name: POLICY_CONFIGURATION
           value: $(params.enterpriseContractPolicy)
         - name: STRICT
-          value: "1"
+          value: "true"
         - name: IGNORE_REKOR
           value: "true"
         - name: EXTRA_RULE_DATA
@@ -212,9 +264,10 @@ spec:
           value: $(params.enterpriseContractTimeout)
         - name: WORKERS
           value: $(params.enterpriseContractWorkerCount)
-      workspaces:
-        - name: data
-          workspace: release-workspace
+        - name: SOURCE_DATA_ARTIFACT
+          value: "$(tasks.apply-mapping.results.sourceDataArtifact)"
+        - name: TRUSTED_ARTIFACTS_DEBUG
+          value: "$(params.trustedArtifactsDebug)"
       runAfter:
         - validate-single-component
     - name: extract-oot-kmods
@@ -236,12 +289,23 @@ spec:
           value: $(params.snapshot)
         - name: remoteRegistry
           value: ""
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
+        - name: taskGitUrl
+          value: "$(params.taskGitUrl)"
+        - name: taskGitRevision
+          value: "$(params.taskGitRevision)"
       workspaces:
         - name: input-data
           workspace: release-workspace
       runAfter:
         - verify-access-to-resources
-          
     - name: sign-oot-kmods
       taskRef:
         resolver: "git"
@@ -263,8 +327,20 @@ spec:
           value: $(params.signingAuthor) 
         - name: signing-secret
           value: $(params.signing-secret)
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
+        - name: taskGitUrl
+          value: "$(params.taskGitUrl)"
+        - name: taskGitRevision
+          value: "$(params.taskGitRevision)"
       workspaces:
-        - name: kmods
+        - name: kmods 
           workspace: release-workspace
       runAfter:
         - extract-oot-kmods
@@ -287,6 +363,18 @@ spec:
           value: $(params.artifact-repo-url)
         - name: artifactBranch
           value: $(params.artifact-branch)
+        - name: sourceDataArtifact
+          value: "$(tasks.collect-data.results.sourceDataArtifact)"
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: dataDir
+          value: $(params.dataDir)
+        - name: trustedArtifactsDebug
+          value: "$(params.trustedArtifactsDebug)"
+        - name: taskGitUrl
+          value: "$(params.taskGitUrl)"
+        - name: taskGitRevision
+          value: "$(params.taskGitRevision)"
       workspaces:
         - name: signed-kmods
           workspace: release-workspace
