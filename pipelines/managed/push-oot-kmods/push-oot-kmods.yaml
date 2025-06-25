@@ -139,8 +139,8 @@ spec:
       workspaces:
         - name: data
           workspace: release-workspace
-      runAfter:
-        - verify-access-to-resources
+      #runAfter:
+      #  - verify-access-to-resources
     - name: check-data-keys
       params:
         - name: dataPath
@@ -376,8 +376,8 @@ spec:
       workspaces:
         - name: input-data
           workspace: release-workspace
-      runAfter:
-        - verify-access-to-resources
+      #runAfter:
+      #  - verify-access-to-resources
     - name: sign-oot-kmods
       taskRef:
         resolver: "git"
