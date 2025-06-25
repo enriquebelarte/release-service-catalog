@@ -18,12 +18,12 @@ spec:
     - name: releasePlan
       type: string
       description: The namespaced name (namespace/name) of the releasePlan
-    - name: releasePlanAdmission
-      type: string
-      description: The namespaced name (namespace/name) of the releasePlanAdmission
-    - name: releaseServiceConfig
-      type: string
-      description: The namespaced name (namespace/name) of the releaseServiceConfig
+    # - name: releasePlanAdmission
+    #   type: string
+    #   description: The namespaced name (namespace/name) of the releasePlanAdmission
+    # - name: releaseServiceConfig
+    #   type: string
+    #   description: The namespaced name (namespace/name) of the releaseServiceConfig
     - name: snapshot
       type: string
       description: The namespaced name (namespace/name) of the snapshot
