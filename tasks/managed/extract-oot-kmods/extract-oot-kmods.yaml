@@ -17,7 +17,7 @@ spec:
       description: Path for the unsigned .ko files to be extracted from the image     
     - name: signedKmodsPath
       type: string
-      description: Path to store the extracted file in the workspace 
+      description: Path to store the extracted files in the workspace 
     - name: snapshot
       type: string
       description: The namespaced name (namespace/name) of the snapshot
@@ -52,6 +52,9 @@ spec:
     - name: sourceDataArtifact
       type: string
       description: Produced trusted data artifact
+    - name: signedKmodsPath
+      type: string
+      description: The directory inside the workspace where the kmods are stored
   volumes:
     - name: workdir
       emptyDir: {}
@@ -150,3 +153,47 @@ spec:
                 rm -rf "${TMP_DIR:?}/${LAYER:?}"
             fi
         done
+    - name: create-trusted-artifact
+      computeResources:
+        limits:
+          memory: 128Mi
+        requests:
+          memory: 128Mi
+          cpu: 250m
+      ref:
+        resolver: "git"
+        params:
+          - name: url
+            value: $(params.taskGitUrl)
+          - name: revision
+            value: $(params.taskGitRevision)
+          - name: pathInRepo
+            value: stepactions/create-trusted-artifact/create-trusted-artifact.yaml
+      params:
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: workDir
+          value: $(params.dataDir)
+        - name: sourceDataArtifact
+          value: $(results.sourceDataArtifact.path)
+    - name: patch-source-data-artifact-result
+      computeResources:
+        limits:
+          memory: 32Mi
+        requests:
+          memory: 32Mi
+          cpu: 20m
+      ref:
+        resolver: "git"
+        params:
+          - name: url
+            value: $(params.taskGitUrl)
+          - name: revision
+            value: $(params.taskGitRevision)
+          - name: pathInRepo
+            value: stepactions/patch-source-data-artifact-result/patch-source-data-artifact-result.yaml
+      params:
+        - name: ociStorage
+          value: $(params.ociStorage)
+        - name: sourceDataArtifact
+          value: $(results.sourceDataArtifact.path)
