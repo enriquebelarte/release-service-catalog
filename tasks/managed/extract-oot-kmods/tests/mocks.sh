@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -eux
 
+# Create the snapshot.json file that the task expects to read
+echo "Creating snapshot.json file for task to read..."
+mkdir -p "$(params.dataDir)"
+cat > "$(params.dataDir)/snapshot.json" << 'EOF'
+{
+  "metadata": {
+    "annotations": {
+      "build.appstudio.redhat.com/commit_sha": "mocksha123"
+    }
+  },
+  "spec": {
+    "components": [
+      {
+        "containerImage": "quay.io/mock/image@sha256:dummy"
+      }
+    ]
+  }
+}
+EOF
+
 # Mock `get-resource` for testing - must return a proper snapshot object
 function get-resource() {
    case "$1" in

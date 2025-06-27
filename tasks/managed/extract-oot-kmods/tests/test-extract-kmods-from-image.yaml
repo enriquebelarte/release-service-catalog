@@ -77,6 +77,8 @@ spec:
           value: signed-kmods
         - name: snapshot
           value: my-snapshot
+        - name: snapshotPath
+          value: snapshot.json
         - name: ociStorage
           value: $(params.ociStorage)
         - name: ociArtifactExpiresAfter

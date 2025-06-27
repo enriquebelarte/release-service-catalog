@@ -19,6 +19,9 @@ spec:
     - name: snapshot
       type: string
       description: The namespaced name (namespace/name) of the snapshot
+    - name: snapshotPath
+      type: string
+      description: Path to the JSON string of the mapped Snapshot spec in the data workspace
     - name: ociStorage
       description: The OCI repository where the Trusted Artifacts are stored.
       type: string
