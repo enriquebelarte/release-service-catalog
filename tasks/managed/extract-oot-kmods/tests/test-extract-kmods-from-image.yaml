@@ -129,16 +129,9 @@ spec:
             env:
               - name: HOME
                 value: /tekton/home
-            script: |
-              #!/usr/bin/env bash
-              # Only try to use trusted artifact if sourceDataArtifact is not empty/dummy
-              if [ -n "$(params.sourceDataArtifact)" ] && [ "$(params.sourceDataArtifact)" != "empty" ]; then
-                echo "Using trusted artifact: $(params.sourceDataArtifact)"
-                # Call the trusted artifacts command directly like the StepAction does
-                /usr/bin/build-trusted-artifacts use "$(params.sourceDataArtifact)=$(params.dataDir)"
-              else
-                echo "No trusted artifact to use (sourceDataArtifact: '$(params.sourceDataArtifact)')"
-              fi
+            args:
+              - use
+              - $(params.sourceDataArtifact)=$(params.dataDir)
           - name: check-values
             image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
             script: |

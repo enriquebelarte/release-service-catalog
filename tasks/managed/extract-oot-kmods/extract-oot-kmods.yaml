@@ -134,7 +134,7 @@ spec:
         # Copy image to tmp
         KMODS_PATH=$(params.kmodsPath)
         SIGNED_KMODS_PATH=$(params.signedKmodsPath)
-        snapshot_json=$(get-resource "snapshot" "$(params.snapshot)")
+        snapshot_json=$(cat "$(params.dataDir)/$(params.snapshotPath)")
         sha_image=$(jq -r '.metadata.annotations["build.appstudio.redhat.com/commit_sha"]' <<< "$snapshot_json")
         source_image=$(jq -r '.spec.components[].containerImage' <<< "$snapshot_json" | sed 's/@.*$//')
         jq -r '.spec.components[].containerImage' <<< "$snapshot_json"
