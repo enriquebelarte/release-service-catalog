@@ -127,20 +127,13 @@ spec:
               value: ""
         steps:
           - name: use-trusted-artifact
-            ref:
-              resolver: "git"
-              params:
-                - name: url
-                  value: $(params.taskGitUrl)
-                - name: revision
-                  value: $(params.taskGitRevision)
-                - name: pathInRepo
-                  value: stepactions/use-trusted-artifact/use-trusted-artifact.yaml
-            params:
-              - name: workDir
-                value: $(params.dataDir)
-              - name: sourceDataArtifact
-                value: $(params.sourceDataArtifact)
+            image: quay.io/redhat-appstudio/build-trusted-artifacts:e02102ede09aa07187cba066ad547a54724e5cf4
+            env:
+              - name: HOME
+                value: /tekton/home
+            args:
+              - use
+              - $(params.sourceDataArtifact)=$(params.dataDir)
           - name: check-values
             image: quay.io/konflux-ci/release-service-utils:0f82be4be43294b6a96846d87ef7f7c0b9e34267
             script: |
