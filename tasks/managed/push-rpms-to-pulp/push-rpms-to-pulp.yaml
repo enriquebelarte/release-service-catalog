@@ -772,8 +772,7 @@ spec:
 
           # Pull the OCI artifact
           echo "Pulling artifact to ${FILES_DIR}..."
-          select-oci-auth "${oci_ref}" > /tmp/oci-auth.json
-          oras pull --registry-config /tmp/oci-auth.json "${oci_ref}" -o "${FILES_DIR}"
+          oras pull "${oci_ref}" -o "${FILES_DIR}"
 
           # Extract the gzipped tar archive if present
           if [ -f "${FILES_DIR}/signed-rpms" ]; then

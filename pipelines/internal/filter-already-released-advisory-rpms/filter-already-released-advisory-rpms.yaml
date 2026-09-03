@@ -33,10 +33,6 @@ spec:
     - name: taskGitRevision
       type: string
       description: The revision in the taskGitUrl repo to be used
-    - name: orasOptions
-      type: string
-      description: oras options to pass to oras calls
-      default: ""
   tasks:
     - name: filter-already-released-advisory-rpms-task
       taskRef:
@@ -59,8 +55,6 @@ spec:
           value: $(params.internalRequestPipelineRunName)
         - name: ociStorage
           value: $(params.ociStorage)
-        - name: orasOptions
-          value: $(params.orasOptions)
   results:
     - name: result
       value: $(tasks.filter-already-released-advisory-rpms-task.results.result)

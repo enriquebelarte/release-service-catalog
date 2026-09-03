@@ -14,6 +14,5 @@ RPMs found in advisories (for digest validation by the calling task).
 | internalRequestPipelineRunName                  | Name of the PipelineRun that requested this task                                           | No       | -                                                   |
 | ociStorage                                      | The OCI repository to store results artifact                                               | No       | -                                                   |
 | trusted_artifacts_dockerconfig_json_secret_name | The name of the secret that contains the dockerconfig json for trusted artifact operations | Yes      | quay-token-konflux-release-trusted-artifacts-secret |
-| orasOptions                                     | oras options to pass to oras calls                                                         | Yes      | ""                                                  |
 | caTrustConfigMapName                            | The name of the ConfigMap to read CA bundle data from                                      | Yes      | trusted-ca                                          |
 | caTrustConfigMapKey                             | The name of the key in the ConfigMap that contains the CA bundle data                      | Yes      | ca-bundle.crt                                       |

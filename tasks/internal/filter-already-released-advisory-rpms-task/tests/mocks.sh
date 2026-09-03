@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 set -eux
 
-function select-oci-auth() {
-  echo "/dev/null"
-}
-
 function oras() {
-  echo "Mock oras called with: $*" >&2
-
-  if [[ "$1" == "push" ]]; then
-    return 0
-  elif [[ "$1" == "manifest" && "$2" == "fetch" ]]; then
-    echo '{"digest": "sha256:mockdigest123"}'
-    return 0
-  else
-    echo "Error: Unexpected oras command: $*" >&2
-    exit 1
-  fi
+  local args=()
+  local insecure_added=false
+  for arg in "$@"; do
+    args+=("$arg")
+    if [[ "$insecure_added" == "false" && "$arg" =~ ^(push|pull|fetch|resolve|tag)$ ]]; then
+      args+=("--insecure")
+      insecure_added=true
+    fi
+  done
+  command oras "${args[@]}"
 }
 
 function git() {

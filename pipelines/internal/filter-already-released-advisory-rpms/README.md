@@ -14,4 +14,3 @@ It returns lists of unreleased RPMs and RPMs found in advisories for digest vali
 | ociStorage                     | The OCI repository to store results artifact                                          | No       | -                                                         |
 | taskGitUrl                     | The url to the git repo where the release-service-catalog tasks to be used are stored | Yes      | https://github.com/konflux-ci/release-service-catalog.git |
 | taskGitRevision                | The revision in the taskGitUrl repo to be used                                        | No       | -                                                         |
-| orasOptions                    | oras options to pass to oras calls                                                    | Yes      | ""                                                        |

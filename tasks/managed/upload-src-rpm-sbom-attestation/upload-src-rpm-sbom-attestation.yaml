@@ -133,7 +133,6 @@ spec:
       computeResources:
         limits:
           memory: 512Mi
-          cpu: 1
         requests:
           memory: 512Mi
           cpu: 1
@@ -145,8 +144,7 @@ spec:
         set -euo pipefail
         set +x
 
-        # RPM SBOM attestations can exceed cosign's default max download size;
-        # raise the limit to 200MB to permit large artifact downloads and uploads
+        # Set the maximum attachment size for cosign to 200MB
         COSIGN_MAX_ATTACHMENT_SIZE=200000000
         export COSIGN_MAX_ATTACHMENT_SIZE
 

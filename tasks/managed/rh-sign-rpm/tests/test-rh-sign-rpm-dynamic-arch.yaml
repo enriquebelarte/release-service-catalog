@@ -4,7 +4,7 @@ kind: Pipeline
 metadata:
   name: test-rh-sign-rpm-dynamic-arch
 spec:
-  description: Test creating internal request with empty snapshotBuildId and multi-arch artifacts.json
+  description: Test creating internal requests with dynamic architecture detection from artifacts.json
   params:
     - name: ociStorage
       description: The OCI repository where the Trusted Artifacts are stored.
@@ -80,6 +80,7 @@ spec:
                     "name": "test-keytab",
                     "secret": "test-keytab-secret"
                   },
+                  "signPipelineImage": "quay.io/redhat-isv/operator-pipelines-images:released",
                   "signKeyAlias": {
                     "key": "devkey1"
                   }
@@ -163,8 +164,12 @@ spec:
           value: "1800"
         - name: pipelineRunUid
           value: $(context.pipelineRun.uid)
+        - name: snapshotPath
+          value: $(context.pipelineRun.uid)/snapshot_spec.json
         - name: dataPath
           value: $(context.pipelineRun.uid)/data.json
+        - name: releasePlanAdmissionPath
+          value: $(context.pipelineRun.uid)/release_plan_admission.json
         - name: artifactsJsonPath
           value: $(context.pipelineRun.uid)/artifacts/artifacts.json
         - name: ociStorage
@@ -193,8 +198,6 @@ spec:
           value: ""
         - name: signedRpmsUploadSubpath
           value: ""
-        - name: PULP_SECRET_NAME
-          value: "mock-pulp-secret"
       runAfter:
         - setup
     - name: check-result
@@ -239,37 +242,85 @@ spec:
 
               echo "Found ${irsLength} internal requests"
 
-              # We expect 1 internal request with all RPMs (single-request mode)
-              if [ "${irsLength}" != "1" ]; then
-                echo "Expected 1 internal request, found ${irsLength}"
+              # We expect 3 internal requests: aarch64, x86_64, source
+              # noarch RPMs are included in ALL arch repos (aarch64, x86_64)
+              if [ "${irsLength}" != "3" ]; then
+                echo "Expected 3 internal requests, found ${irsLength}"
                 exit 1
               fi
 
-              params_json=$(jq -r ".items[0].spec.params" <<< "${internalRequests}")
+              # Check that filtered artifacts.json files were created for each repo
+              for repo in x86_64 aarch64 source; do
+                if [ ! -f "$(params.dataDir)/artifacts-${repo}.json" ]; then
+                  echo "Expected filtered artifacts-${repo}.json file not found"
+                  exit 1
+                fi
+              done
 
-              # Verify unsigned_rpms_location uses "all" repo when snapshotBuildId is empty
-              unsigned_location=$(jq -r '.unsigned_rpms_location' <<< "${params_json}")
-              if [ "${unsigned_location}" != "rok-storage/all" ]; then
-                echo "Expected unsigned_rpms_location 'rok-storage/all', got '${unsigned_location}'"
+              # Verify NO artifacts-noarch.json file was created
+              if [ -f "$(params.dataDir)/artifacts-noarch.json" ]; then
+                echo "Unexpected artifacts-noarch.json file found"
                 exit 1
               fi
 
-              signed_destination=$(jq -r '.signed_rpms_destination' <<< "${params_json}")
-              if [ "${signed_destination}" != "rok-storage/all" ]; then
-                echo "Expected signed_rpms_destination 'rok-storage/all', got '${signed_destination}'"
+              # Verify x86_64 filtered file contains x86_64 AND noarch artifacts
+              x86_count=$(jq '.artifacts | length' "$(params.dataDir)/artifacts-x86_64.json")
+              if [ "${x86_count}" != "2" ]; then
+                echo "Expected 2 artifacts in x86_64 (1 x86_64 + 1 noarch), found ${x86_count}"
                 exit 1
               fi
 
-              # Verify artifact_json contains all 3 RPMs (x86_64, noarch, source)
-              artifactJson=$(jq -r '.artifact_json' <<< "${params_json}")
-              decodedArtifact=$(base64 -d <<< "${artifactJson}" | gunzip)
-              artifactCount=$(jq '.artifacts | length' <<< "${decodedArtifact}")
-              if [ "${artifactCount}" != "3" ]; then
-                echo "Expected 3 artifacts in artifact_json, found ${artifactCount}"
+              # Verify aarch64 filtered file contains noarch artifacts (no aarch64-specific RPMs)
+              aarch64_count=$(jq '.artifacts | length' "$(params.dataDir)/artifacts-aarch64.json")
+              if [ "${aarch64_count}" != "1" ]; then
+                echo "Expected 1 artifact in aarch64 (noarch only), found ${aarch64_count}"
                 exit 1
               fi
 
-              echo "Test passed: single request created with all RPMs when snapshotBuildId is empty"
+              # Verify source filtered file contains only source artifacts
+              source_count=$(jq '.artifacts | length' "$(params.dataDir)/artifacts-source.json")
+              if [ "${source_count}" != "1" ]; then
+                echo "Expected 1 artifact in source, found ${source_count}"
+                exit 1
+              fi
+
+              # Verify x86_64 file contains both x86_64 and noarch artifacts
+              x86_archs=$(jq -r '.artifacts[].labels.arch' "$(params.dataDir)/artifacts-x86_64.json" | sort -u)
+              expected_x86=$'noarch\nx86_64'
+              if [ "${x86_archs}" != "${expected_x86}" ]; then
+                echo "x86_64 should contain noarch and x86_64, got: ${x86_archs}"
+                exit 1
+              fi
+
+              # Verify aarch64 file contains only noarch
+              aarch64_archs=$(jq -r '.artifacts[].labels.arch' "$(params.dataDir)/artifacts-aarch64.json")
+              if [ "${aarch64_archs}" != "noarch" ]; then
+                echo "aarch64 should contain only noarch, got: ${aarch64_archs}"
+                exit 1
+              fi
+
+              # Verify source file contains only source
+              source_archs=$(jq -r '.artifacts[].labels.arch' "$(params.dataDir)/artifacts-source.json")
+              if [ "${source_archs}" != "source" ]; then
+                echo "source should contain only source, got: ${source_archs}"
+                exit 1
+              fi
+
+              # Verify the internal requests have correct unsigned_rpms_location
+              for i in 0 1 2; do
+                params_json=$(jq -r ".items[$i].spec.params" <<< "${internalRequests}")
+                unsigned_location=$(jq -r '.unsigned_rpms_location' <<< "${params_json}")
+
+                # Should be rok-storage/x86_64, rok-storage/aarch64, or rok-storage/source
+                if [[ "${unsigned_location}" != "rok-storage/x86_64" ]] && \
+                   [[ "${unsigned_location}" != "rok-storage/aarch64" ]] && \
+                   [[ "${unsigned_location}" != "rok-storage/source" ]]; then
+                  echo "Unexpected unsigned_rpms_location: ${unsigned_location}"
+                  exit 1
+                fi
+              done
+
+              echo "Test passed: noarch RPMs included in all arch repos"
       runAfter:
         - run-task
   finally:

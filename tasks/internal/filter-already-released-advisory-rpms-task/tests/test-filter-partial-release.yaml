@@ -39,8 +39,6 @@ spec:
           value: "$(context.pipelineRun.name)"
         - name: ociStorage
           value: $(params.ociStorage)
-        - name: orasOptions
-          value: $(params.orasOptions)
     - name: validate-result
       runAfter:
         - run-filter-task
@@ -76,4 +74,44 @@ spec:
               fi
               echo "Filter results artifact: $ARTIFACT"
 
+              # Pull and extract the OCI artifact
+              oci_ref="${ARTIFACT#oci:}"
+              RESULTS_DIR=$(mktemp -d)
+              oras pull --insecure "${oci_ref}" -o "$RESULTS_DIR"
+              tar -xzf "$RESULTS_DIR/filter-results.tar.gz" -C "$RESULTS_DIR"
+
+              UNRELEASED=$(cat "$RESULTS_DIR/unreleased_rpms.json")
+              IN_ADVISORY=$(cat "$RESULTS_DIR/in_advisory_rpms.json")
+
+              echo "Unreleased RPMs: $UNRELEASED"
+              echo "In-advisory RPMs: $IN_ADVISORY"
+
+              UNRELEASED_COUNT=$(jq 'length' <<< "$UNRELEASED")
+              IN_ADVISORY_COUNT=$(jq 'length' <<< "$IN_ADVISORY")
+
+              if [[ "$UNRELEASED_COUNT" -ne 1 ]]; then
+                echo "Expected 1 unreleased RPM, but found $UNRELEASED_COUNT"
+                exit 1
+              fi
+
+              if [[ "$IN_ADVISORY_COUNT" -ne 1 ]]; then
+                echo "Expected 1 in-advisory RPM, but found $IN_ADVISORY_COUNT"
+                exit 1
+              fi
+
+              # Verify the unreleased one is new-comp
+              UNRELEASED_NAME=$(jq -r '.[0].name' <<< "$UNRELEASED")
+              if [[ "$UNRELEASED_NAME" != "new-comp" ]]; then
+                echo "Expected unreleased to be 'new-comp' but got '$UNRELEASED_NAME'"
+                exit 1
+              fi
+
+              # Verify the in-advisory one is released-comp
+              IN_ADV_NAME=$(jq -r '.[0].name' <<< "$IN_ADVISORY")
+              if [[ "$IN_ADV_NAME" != "released-comp" ]]; then
+                echo "Expected in-advisory to be 'released-comp' but got '$IN_ADV_NAME'"
+                exit 1
+              fi
+
+              rm -rf "$RESULTS_DIR"
               echo "Validation successful!"

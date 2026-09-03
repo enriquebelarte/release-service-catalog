@@ -10,6 +10,10 @@ spec:
   description: |-
     Tekton task to create internalrequests to sign RPMs
   params:
+    - name: snapshotPath
+      type: string
+      description: |
+        Path to the JSON file of the mapped Snapshot spec in the data workspace
     - name: dataPath
       type: string
       description: |
@@ -17,15 +21,17 @@ spec:
     - name: snapshotBuildId
       type: string
       description: |
-        Repository name passed to the signing pipeline. Despite the parameter name,
-        this value is used as the Pulp repository identifier for locating unsigned
-        and storing signed RPMs. If empty, defaults to "all"
+        Pulp repository name to use for RPM signing. If provided, this value is used directly.
+        If empty, repositories are determined dynamically from the architectures in artifacts.json.
       default: ""
+    - name: releasePlanAdmissionPath
+      description: Path to the JSON string of the releasePlanAdmission in the data workspace
+      type: string
     - name: artifactsJsonPath
       type: string
       description: |
         Path to the artifacts.json file in the data workspace (pulp-tool format with RPM metadata)
-      default: "artifacts.json"
+      default: ""
     - name: requester
       type: string
       description: Name of the user that requested the signing, for auditing purposes
@@ -33,14 +39,6 @@ spec:
       type: string
       default: "1800"
       description: InternalRequest timeout
-    - name: pipelineTimeout
-      type: string
-      default: "0h30m0s"
-      description: Pipeline timeout for the signing InternalRequest
-    - name: taskTimeout
-      type: string
-      default: "0h25m0s"
-      description: Task timeout for the signing InternalRequest
     - name: pipelineRunUid
       type: string
       description: The uid of the current pipelineRun. Used as a label value when creating internal requests
@@ -88,37 +86,21 @@ spec:
       type: string
       description: |
         Subpath appended after the repo for unsigned RPMs location (e.g., "rpms" results in domain/repo/rpms).
-        Set to empty string for no subpath
+        Set to empty string for no subpath.
       default: "rpms"
     - name: signedRpmsSubpath
       type: string
       description: |
         Subpath appended after the repo for signed RPMs destination
         (e.g., "rpms-signed" results in domain/repo/rpms-signed).
-        Set to empty string for no subpath
+        Set to empty string for no subpath.
       default: "rpms-signed"
     - name: signedRpmsUploadSubpath
       type: string
       description: |
         Subpath for uploading signed RPMs within the signing pipeline.
-        Set to empty string for no subpath
+        Set to empty string for no subpath.
       default: ""
-    - name: createOciArtifact
-      type: string
-      description: >-
-        Whether the signing pipeline should create an OCI artifact from the signed RPMs.
-        Set to "true" to enable
-      default: "false"
-    - name: signingRepo
-      type: string
-      description: >-
-        Git repository URL containing the signing tasks
-      default: "https://gitlab.cee.redhat.com/signing/signing.git"
-    - name: signingRevision
-      type: string
-      description: >-
-        Git revision (branch, tag, or commit) in the signing repository
-      default: "69db744bdb9c4f4df48ccf24a3baf25bd39cbf51"
     - name: PULP_SECRET_NAME
       type: string
       description: >-
@@ -196,15 +178,17 @@ spec:
         - name: sourceDataArtifact
           value: $(params.sourceDataArtifact)
     - name: rh-sign-rpm
-      image: quay.io/konflux-ci/release-service-utils@sha256:5546fa78d3c88d7b6a2e8cff8902f7757f00541d0bbaf113b9f293133894afa3
+      image: quay.io/konflux-ci/release-service-utils:d08bdfa3733a7c75d5334aaa77b7aa46fbace00b
       computeResources:
         limits:
-          memory: 512Mi
-          cpu: 250m
+          memory: 2Gi
+          cpu: "1"
         requests:
-          memory: 512Mi
-          cpu: 250m
+          memory: 2Gi
+          cpu: "1"
       env:
+        - name: SNAPSHOT_SPEC_FILE
+          value: $(params.dataDir)/$(params.snapshotPath)
         - name: DATA_FILE
           value: $(params.dataDir)/$(params.dataPath)
         - name: ARTIFACTS_JSON_FILE
@@ -217,10 +201,21 @@ spec:
           value: /tmp
       script: |
         #!/usr/bin/env bash
-        set -euo pipefail
+        set -e
+
+        if [ ! -f "${SNAPSHOT_SPEC_FILE}" ] ; then
+            echo "No valid snapshot file was provided."
+            exit 1
+        fi
 
         if [ ! -f "${DATA_FILE}" ] ; then
             echo "No data JSON was provided."
+            exit 1
+        fi
+
+        RPA_FILE="$(params.dataDir)/$(params.releasePlanAdmissionPath)"
+        if [ ! -f "${RPA_FILE}" ] ; then
+            echo "No valid rpa file was provided."
             exit 1
         fi
 
@@ -370,7 +365,7 @@ spec:
             local rpmname="$1" version="$2" release="$3" arch="$4" repo_name="$5" rpm_file="$6"
 
             local repo_version_href
-            repo_version_href="$(get_repo_latest_version_href "${repo_name}")" || return 2
+            repo_version_href="$(get_repo_latest_version_href "${repo_name}")" || return 1
 
             # Query for RPM by NVRA (without epoch - epoch is not in filename)
             local query_url="${PULP_BASE_URL}/api/pulp/${SIGNED_RPMS_DOMAIN}/api/v3/content/rpm/packages/"
@@ -417,15 +412,19 @@ spec:
             # Download signed RPM to temp file
             signed_tmpfile="$(mktemp --suffix=.rpm)"
             unsigned_tmpfile="$(mktemp --suffix=.rpm)"
-            trap 'rm -f ${signed_tmpfile} ${unsigned_tmpfile}' RETURN
+            trap "rm -f ${signed_tmpfile} ${unsigned_tmpfile}" RETURN
 
             local http_code
-            http_code=$(curl_auth -s -L -w "%{http_code}" -o "${signed_tmpfile}" "${rpm_url}" 2>/dev/null)
+            # Suppress tracing to avoid leaking credentials in logs
+            { set +x; } 2>/dev/null
+            http_code=$(curl -s -L -w "%{http_code}" -o "${signed_tmpfile}" \
+                -u "${PULP_USERNAME}:${PULP_PASSWORD}" "${rpm_url}" 2>/dev/null)
 
             if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
                 # Try without auth
-                http_code=$(curl --retry 3 -s -L -w "%{http_code}" -o "${signed_tmpfile}" "${rpm_url}" 2>/dev/null)
+                http_code=$(curl -s -L -w "%{http_code}" -o "${signed_tmpfile}" "${rpm_url}" 2>/dev/null)
             fi
+            set -x
 
             if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
                 echo "Error: Failed to download signed RPM (HTTP ${http_code}): ${rpm_url}" >&2
@@ -485,13 +484,16 @@ spec:
             unsigned_rpm_url="${unsigned_dist_base_url}/Packages/${first_letter}/${rpm_file}"
 
             # Download unsigned RPM
-            http_code=$(curl_auth -s -L -w "%{http_code}" -o "${unsigned_tmpfile}" "${unsigned_rpm_url}" 2>/dev/null)
+            { set +x; } 2>/dev/null
+            http_code=$(curl -s -L -w "%{http_code}" -o "${unsigned_tmpfile}" \
+                -u "${PULP_USERNAME}:${PULP_PASSWORD}" "${unsigned_rpm_url}" 2>/dev/null)
 
             if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
                 # Try without auth
-                http_code=$(curl --retry 3 -s -L -w "%{http_code}" -o "${unsigned_tmpfile}" \
+                http_code=$(curl -s -L -w "%{http_code}" -o "${unsigned_tmpfile}" \
                     "${unsigned_rpm_url}" 2>/dev/null)
             fi
+            set -x
 
             if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
                 echo "Warning: Could not download unsigned RPM (HTTP ${http_code}), skipping verification" >&2
@@ -546,17 +548,18 @@ spec:
 
         # Extract signing configuration from data file
         KERBEROS_PRINCIPAL=$(jq --exit-status -r '.signOptions.signKeytab.principal' "${DATA_FILE}")
-        KERBEROS_KEYTAB=$(jq --exit-status -r '.signOptions.signKeytab.name // "keytab"' "${DATA_FILE}")
+        KERBEROS_KEYTAB=$(jq --exit-status -r '.signOptions.signKeytab.name' "${DATA_FILE}")
         KERBEROS_KEYTAB_SECRET=$(jq --exit-status -r '.signOptions.signKeytab.secret' "${DATA_FILE}")
+        PIPELINE_IMAGE=$(jq --exit-status -r '.signOptions.signPipelineImage' "${DATA_FILE}")
         SIGNING_ALIAS=$(jq --exit-status -r '.signOptions.signKeyAlias.key' "${DATA_FILE}")
-        SKIP_UPLOAD_TO_PULP=$(jq --exit-status -r '.signOptions.skipUploadToPulp // "false"' "${DATA_FILE}")
+        SKIP_UPLOAD_TO_PULP=$(jq --exit-status -r '.signOptions.skipUploadToPulp // false' "${DATA_FILE}")
         SERVICE_ACCOUNT=$(jq --exit-status -r \
             '.signOptions.signPipelineServiceAccount // "release-service-account"' "${DATA_FILE}")
         ARTIFACT_STORAGE_SECRET=$(jq --exit-status -r \
             '.signOptions.artifactStorageSecret // "signing-artifact-storage-preprod"' "${DATA_FILE}")
 
-        SIGNING_PIPELINE_GIT_URL="$(params.signingRepo)"
-        SIGNING_PIPELINE_GIT_REVISION="$(params.signingRevision)"
+        SIGNING_PIPELINE_GIT_URL="https://gitlab.cee.redhat.com/signing/signing.git"
+        SIGNING_PIPELINE_GIT_REVISION="hummingbird-rpm-signing"
 
         # Use snapshotBuildId if provided, otherwise use a default repo name
         if [ -n "$(params.snapshotBuildId)" ]; then
@@ -587,7 +590,7 @@ spec:
         # Check which RPMs already exist in the signed Pulp domain
         # Download existing signed RPMs and only sign those that are missing
         SIGNED_RPMS_DIR="$(mktemp -d)"
-        trap 'rm -rf ${SIGNED_RPMS_DIR}' EXIT
+        trap "rm -rf ${SIGNED_RPMS_DIR}" EXIT
 
         # Arrays to track RPMs
         declare -a EXISTING_RPMS=()
@@ -676,13 +679,16 @@ spec:
                     rpm_url="${dist_base_url}/Packages/${first_letter}/${rpm_file}"
 
                     echo "Downloading ${rpm_file} from ${repo_name}..."
-                    http_code=$(curl_auth -s -L -w "%{http_code}" -o "${SIGNED_RPMS_DIR}/${rpm_file}" \
-                        "${rpm_url}" 2>/dev/null)
+                    # Suppress tracing to avoid leaking credentials in logs
+                    { set +x; } 2>/dev/null
+                    http_code=$(curl -s -L -w "%{http_code}" -o "${SIGNED_RPMS_DIR}/${rpm_file}" \
+                        -u "${PULP_USERNAME}:${PULP_PASSWORD}" "${rpm_url}" 2>/dev/null)
 
                     if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
-                        http_code=$(curl --retry 3 -s -L -w "%{http_code}" \
+                        http_code=$(curl -s -L -w "%{http_code}" \
                             -o "${SIGNED_RPMS_DIR}/${rpm_file}" "${rpm_url}" 2>/dev/null)
                     fi
+                    set -x
 
                     if [[ "${http_code}" -lt 200 ]] || [[ "${http_code}" -ge 300 ]]; then
                         echo "Error: Failed to download ${rpm_file} (HTTP ${http_code})"
@@ -701,8 +707,8 @@ spec:
 
                 # Create tarball of signed RPMs
                 SIGNED_RPMS_TAR="${SIGNED_RPMS_DIR}/signed-rpms"
-                mapfile -t rpm_files < <(find "${SIGNED_RPMS_DIR}" -maxdepth 1 -name '*.rpm' -printf '%f\n')
-                tar -czf "${SIGNED_RPMS_TAR}" -C "${SIGNED_RPMS_DIR}" "${rpm_files[@]}"
+                tar -czf "${SIGNED_RPMS_TAR}" -C "${SIGNED_RPMS_DIR}" \
+                    $(ls "${SIGNED_RPMS_DIR}"/*.rpm 2>/dev/null | xargs -n1 basename)
 
                 # Push to OCI storage (use relative path to avoid oras path validation error)
                 OCI_ARTIFACT_TAG="signed-rpms-$(date +%s)"
@@ -756,6 +762,7 @@ spec:
 
         internal-request \
           --pipeline direct-rpm-signing \
+          -p image="${PIPELINE_IMAGE}" \
           -p artifact_json="${ARTIFACT_JSON}" \
           -p ociStorage="$(params.ociStorage)" \
           -p kerberos_principal="${KERBEROS_PRINCIPAL}" \
@@ -768,17 +775,16 @@ spec:
           -p source_artifact_storage_domain="$(params.unsignedRpmsDomain)" \
           -p destination_artifact_storage_domain="$(params.signedRpmsDomain)" \
           -p skip_upload_to_pulp="${SKIP_UPLOAD_TO_PULP}" \
-          -p create_oci_artifact="$(params.createOciArtifact)" \
           -p requester="$(params.requester)" \
           -p force="false" \
           -p signed_rpms_upload_subpath="$(params.signedRpmsUploadSubpath)" \
           -p taskGitUrl="${SIGNING_PIPELINE_GIT_URL}" \
           -p taskGitRevision="${SIGNING_PIPELINE_GIT_REVISION}" \
-          -l "${PIPELINERUN_LABEL}=$(context.pipelineRun.uid)" \
-          -t "$(params.requestTimeout)" \
+          -l "${PIPELINERUN_LABEL}=$(params.pipelineRunUid)" \
+          -t 1800 \
           --service-account "${SERVICE_ACCOUNT}" \
-          --pipeline-timeout "$(params.pipelineTimeout)" \
-          --task-timeout "$(params.taskTimeout)" \
+          --pipeline-timeout 0h30m0s \
+          --task-timeout 0h25m0s \
           -s true | tee "${IR_FILE}"
 
         # Get the InternalRequest name and extract signed RPMs artifact
@@ -825,8 +831,8 @@ spec:
 
             # Create combined tarball
             COMBINED_TAR="${SIGNED_RPMS_DIR}/signed-rpms"
-            mapfile -t combined_rpm_files < <(find "${SIGNED_RPMS_DIR}" -maxdepth 1 -name '*.rpm' -printf '%f\n')
-            tar -czf "${COMBINED_TAR}" -C "${SIGNED_RPMS_DIR}" "${combined_rpm_files[@]}"
+            tar -czf "${COMBINED_TAR}" -C "${SIGNED_RPMS_DIR}" \
+                $(ls "${SIGNED_RPMS_DIR}"/*.rpm 2>/dev/null | xargs -n1 basename)
 
             # Push combined artifact to OCI storage (use relative path)
             OCI_ARTIFACT_TAG="signed-rpms-combined-$(date +%s)"

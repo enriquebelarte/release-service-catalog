@@ -7,14 +7,9 @@ This directory contains end-to-end integration tests for the Release Service Cat
 The following integration test suites are available:
 
 - **[collectors](collectors/)** - Tests for advisory data collection and processing
-- **[collectors-no-cve](collectors-no-cve/)** - Tests for the no-CVE path of advisory data collection
-- **[rh-advisories-idempotent](rh-advisories-idempotent/)** - Tests idempotent re-release behavior for the rh-advisories pipeline: verifies that a second release with the same snapshot detects the existing advisory, skips all downstream tasks, and correctly populates `advisory.url` in the Release CR status
 - **[fbc-release](fbc-release/)** - Tests for File-Based Catalog (FBC) release pipeline
-- **[push-artifacts-to-cdn](push-artifacts-to-cdn/)** - Tests for the push-artifacts-to-cdn pipeline (binary artifact distribution to Pulp and CGW)
 - **[push-to-addons-registry](push-to-addons-registry/)** - Tests for pushing to addon registries
-- **[rh-push-helm-chart-to-registry-redhat-io](rh-push-helm-chart-to-registry-redhat-io/)** - Tests for Helm OCI chart release pipeline
 - **[rh-push-to-external-registry](rh-push-to-external-registry/)** - Tests for pushing to external registries
-- **[rh-push-to-external-registry-multi-component](rh-push-to-external-registry-multi-component/)** - Tests for pushing multiple components to external registries in a single release
 - **[release-to-github](release-to-github/)** - Tests for GitHub release pipeline
 - **[rhtap-service-push](rhtap-service-push/)** - Tests for RHTAP service push pipeline
 - **[rh-advisories-large-snapshot](rh-advisories-large-snapshot/)** - **Manual test** for rh-advisories pipeline with large snapshots (~200 components)
@@ -37,7 +32,6 @@ All integration tests require the following dependencies:
   - `admin:repo_hook`
   - `delete_repo`
   - `repo`
-* Some suites (`rhtap-service-push`, `fbc-release`) use dedicated bot accounts instead of the shared token. See [MAINTENANCE.md](MAINTENANCE.md) for details.
 * **Vault Password**: The password to decrypt the vault files (contact a member of the Release team)
 * **Cluster Access**: Access to the target cluster and tenant/managed namespaces
   - Tests use `stg-rh01` cluster
@@ -220,13 +214,6 @@ These integration tests are automatically executed in CI/CD pipelines:
 - **Pull Request Triggers** - Tests run when changes are made to relevant pipeline files or the `integration-tests/` directory
 - **E2E Pipeline** - Uses `integration-tests/pipelines/e2e-tests-staging-pipeline.yaml`
 - **Konflux E2E Pipeline** - Uses `integration-tests/pipelines/konflux-e2e-tests-pipeline.yaml`
-- **Periodic E2E Pipeline** - Uses `integration-tests/pipelines/e2e-tests-periodic-pipeline.yaml`
-  - Runs all integration suites in one Tekton step
-  - **Memory**: 6Gi on the `run-test` step (raised from 2Gi to avoid OOM during parallel setup)
-  - **Concurrency**: at most **9** suites at a time by default (`MAX_PARALLEL` pipeline param, overridable per PipelineRun)
-  - Component init retries when `kubectl get` is temporarily unavailable under load (`lib/test-functions.sh`)
-
-Local `./run-test.sh` runs one suite at a time; only the periodic pipeline runs many suites in parallel.
 
 ## Troubleshooting
 
@@ -236,8 +223,7 @@ Local `./run-test.sh` runs one suite at a time; only the periodic pipeline runs 
 2. **Cluster Access** - Ensure KUBECONFIG is properly configured
 3. **Secret Errors** - Check vault password file exists and is correct
 4. **Resource Conflicts** - Use cleanup scripts to remove stale resources
-5. **OOM or `kubectl create` exit 137 in periodic e2e** - Usually too many suites starting at once or insufficient step memory. The periodic pipeline caps parallelism and sets 6Gi; if failures persist, check Tekton step logs for `Killed` during tenant resource setup.
-6. **PaC token unrecognizable error** - The following error:
+5. **PaC token unrecognizable error** - The following error:
    ```bash
    Initialization check attempt 6/60...
    ⚠️ Warning: Could not get component PR from annotations: {"pac":{"state":"error","error-id":74,"error-message":"74: Access token is unrecognizable by GitHub"},"message":"done"}
@@ -264,6 +250,3 @@ When adding new integration tests:
 4. Store secrets in ansible vault files
 5. Update this README with test-specific information
 6. Add test-specific documentation to the individual test README
-7. Sym link resource files to existing tests where applicable (like `application.yaml` files)
-8. Add an IntegrationTestScenario to `konflux-release-data` to trigger the test. Following existing examples, add the test for release-service-utils as well
-9. After the test has proven stable for 7 days, mark it as required in the GitHub UI branch settings

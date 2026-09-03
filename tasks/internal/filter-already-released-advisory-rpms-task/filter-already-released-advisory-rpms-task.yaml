@@ -31,10 +31,6 @@ spec:
       type: string
       description: The name of the secret that contains the dockerconfig json for trusted artifact operations
       default: quay-token-konflux-release-trusted-artifacts-secret
-    - name: orasOptions
-      type: string
-      description: oras options to pass to oras calls
-      default: ""
     - name: caTrustConfigMapName
       type: string
       description: The name of the ConfigMap to read CA bundle data from
@@ -98,8 +94,6 @@ spec:
       env:
         - name: TRANSFORMED_SNAPSHOT
           value: "$(params.transformedSnapshot)"
-        - name: ORAS_OPTIONS
-          value: "$(params.orasOptions)"
       script: |
         #!/usr/bin/env bash
         set -eo pipefail
@@ -142,31 +136,6 @@ spec:
         }
         trap 'exitfunc $? $LINENO "$BASH_COMMAND"' EXIT
 
-        push_results_to_oci() {
-          local results_dir="$1"
-          local oci_storage
-          oci_storage="$(params.ociStorage)"
-          local oci_tag
-          oci_tag="filter-results-$(date +%s)"
-          local oci_ref="${oci_storage}:${oci_tag}"
-
-          echo "Pushing filter results to OCI storage: ${oci_ref}" >&2
-          local oras_opts="--annotation=quay.expires-after=1d"
-          # Intentionally unquoted: empty quoted string breaks oras positional args
-          # shellcheck disable=SC2086
-          (cd "${results_dir}" && oras push ${ORAS_OPTIONS:-} ${oras_opts} \
-            --registry-config <(select-oci-auth "${oci_storage}") \
-            "${oci_ref}" "filter-results.tar.gz:application/gzip") >&2
-
-          local digest
-          # Intentionally unquoted: empty quoted string breaks oras positional args
-          # shellcheck disable=SC2086
-          digest=$(oras manifest fetch ${ORAS_OPTIONS:-} "${oci_ref}" \
-            --registry-config <(select-oci-auth "${oci_storage}") \
-            --descriptor | jq -r '.digest')
-          echo "oci:${oci_storage}@${digest}"
-        }
-
         # === Phase 1: Decode transformed snapshot ===
         TRANSFORMED_SNAPSHOT_JSON=$(base64 -d <<< "$TRANSFORMED_SNAPSHOT" | gunzip)
         echo "Transformed Snapshot JSON: $TRANSFORMED_SNAPSHOT_JSON"
@@ -208,7 +177,23 @@ spec:
           RESULTS_TAR="$RESULTS_DIR/filter-results.tar.gz"
           tar -czf "$RESULTS_TAR" -C "$RESULTS_DIR" unreleased_rpms.json in_advisory_rpms.json
 
-          ARTIFACT_REF=$(push_results_to_oci "$RESULTS_DIR")
+          # Push to OCI storage
+          OCI_STORAGE="$(params.ociStorage)"
+          OCI_TAG="filter-results-$(date +%s)"
+          OCI_REF="${OCI_STORAGE}:${OCI_TAG}"
+
+          echo "Pushing filter results to OCI storage: ${OCI_REF}"
+          ORAS_OPTS="--annotation=quay.expires-after=1d"
+          (cd "$RESULTS_DIR" && oras push ${ORAS_OPTS} \
+            --registry-config <(select-oci-auth "${OCI_STORAGE}") \
+            "${OCI_REF}" "filter-results.tar.gz:application/gzip")
+
+          # Get digest for the artifact reference
+          DIGEST=$(oras manifest fetch "${OCI_REF}" \
+            --registry-config <(select-oci-auth "${OCI_STORAGE}") \
+            --descriptor | jq -r '.digest')
+          ARTIFACT_REF="oci:${OCI_STORAGE}@${DIGEST}"
+
           echo "Filter results artifact: ${ARTIFACT_REF}"
           echo -n "${ARTIFACT_REF}" > "$(results.filter_results_artifact.path)"
           echo -n "" > "$(results.advisory_url.path)"
@@ -298,7 +283,23 @@ spec:
         RESULTS_TAR="$RESULTS_DIR/filter-results.tar.gz"
         tar -czf "$RESULTS_TAR" -C "$RESULTS_DIR" unreleased_rpms.json in_advisory_rpms.json
 
-        ARTIFACT_REF=$(push_results_to_oci "$RESULTS_DIR")
+        # Push to OCI storage
+        OCI_STORAGE="$(params.ociStorage)"
+        OCI_TAG="filter-results-$(date +%s)"
+        OCI_REF="${OCI_STORAGE}:${OCI_TAG}"
+
+        echo "Pushing filter results to OCI storage: ${OCI_REF}"
+        ORAS_OPTS="--annotation=quay.expires-after=1d"
+        (cd "$RESULTS_DIR" && oras push ${ORAS_OPTS} \
+          --registry-config <(select-oci-auth "${OCI_STORAGE}") \
+          "${OCI_REF}" "filter-results.tar.gz:application/gzip")
+
+        # Get digest for the artifact reference
+        DIGEST=$(oras manifest fetch "${OCI_REF}" \
+          --registry-config <(select-oci-auth "${OCI_STORAGE}") \
+          --descriptor | jq -r '.digest')
+        ARTIFACT_REF="oci:${OCI_STORAGE}@${DIGEST}"
+
         echo "Filter results artifact: ${ARTIFACT_REF}"
         echo -n "${ARTIFACT_REF}" > "$(results.filter_results_artifact.path)"
 

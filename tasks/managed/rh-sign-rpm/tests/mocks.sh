@@ -7,8 +7,8 @@ function internal-request() {
   TIMEOUT=30
   END_TIME=$(date -ud "$TIMEOUT seconds" +%s)
 
-  echo "Mock internal-request called with: $*"
-  echo "$*" >> "$(params.dataDir)/mock_internal-request.txt"
+  echo Mock internal-request called with: $*
+  echo $* >> $(params.dataDir)/mock_internal-request.txt
 
   # since we put the IR in the background, we need to be able to locate it so we can
   # get the name to patch it. We do this by tacking on another random label that we can use
@@ -30,19 +30,19 @@ function internal-request() {
     NAME=$(kubectl get internalrequest -l "internal-services.appstudio.openshift.io/test-id=$rando" \
         --no-headers -o custom-columns=":metadata.name" \
         --sort-by=.metadata.creationTimestamp | tail -1)
-    if [ -z "${NAME}" ]; then
+    if [ -z $NAME ]; then
         echo "Warning: Unable to get IR name"
         sleep 2
     fi
   done
-  echo "IR Name: ${NAME}"
+  echo "IR Name: $NAME"
 
   if [[ "$*" == *"expected-ir-failure"* ]]; then
-      set_ir_status "${NAME}" Failure 5
+      set_ir_status $NAME Failure 5
   elif [[ "$*" == *"expected-timeout-failure"* ]]; then
       echo "skipping setting IR status since we want a timeout..."
   else
-      set_ir_status "${NAME}" Succeeded 5
+      set_ir_status $NAME Succeeded 5
   fi
   wait -n
   EXIT_CODE=$?
@@ -54,14 +54,14 @@ function set_ir_status() {
     NAME=$1
     REASON=$2
     DELAY=$3
-    echo "Setting status of ${NAME} to reason ${REASON} in ${DELAY} seconds..." >&2
-    sleep "${DELAY}"
-    PATCH_FILE="$(params.dataDir)/${NAME}-patch.json"
+    echo Setting status of $NAME to reason $REASON in $DELAY seconds... >&2
+    sleep $DELAY
+    PATCH_FILE=$(params.dataDir)/${NAME}-patch.json
     status="True"
     if [ "${REASON}" == "Failure" ]; then
       status="False"
       # For failure, don't include signed_rpms_oci_artifact
-      cat > "${PATCH_FILE}" << EOF
+      cat > $PATCH_FILE << EOF
 {
   "status": {
     "conditions": [
@@ -78,7 +78,7 @@ function set_ir_status() {
 }
 EOF
     else
-      cat > "${PATCH_FILE}" << EOF
+      cat > $PATCH_FILE << EOF
 {
   "status": {
     "conditions": [
@@ -97,6 +97,6 @@ EOF
 }
 EOF
     fi
-    echo "Calling kubectl patch for ${NAME}..."
-    kubectl patch internalrequest "${NAME}" --type=merge --subresource status --patch-file "${PATCH_FILE}"
+    echo "Calling kubectl patch for $NAME..."
+    kubectl patch internalrequest $NAME --type=merge --subresource status --patch-file $PATCH_FILE
 }
